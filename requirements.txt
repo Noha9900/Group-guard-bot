@@ -4,3 +4,4 @@ py-tgcalls==1.2.9
 yt-dlp
 python-dotenv
 aiohttp
+ntgcalls==1.0.1
