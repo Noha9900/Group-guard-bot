@@ -1,5 +1,3 @@
-pyrogram==2.0.0
+pyrogram==2.0.106
 tgcrypto
-py-tgcalls
-yt-dlp
-python-dotenv
+py-tgcalls==2.0.0.dev24
