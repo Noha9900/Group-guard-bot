@@ -3,4 +3,4 @@ TgCrypto
 py-tgcalls==1.2.9
 yt-dlp
 aiohttp
-nightcalls==1.0.0
+nightcalls
