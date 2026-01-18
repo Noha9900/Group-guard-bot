@@ -1,3 +1,3 @@
-pyrogram
-pytgcalls
-tgcrypto
+pyrogram>=1.4,<2.0
+pytgcalls>=3.0.0.dev21,<4.0
+tgcrypto>=1.2
