@@ -1,3 +1,5 @@
+pip install yt-dlp
+python3 bot.py
 pip install --upgrade pip
 pip install git+https://github.com/pytgcalls/pytgcalls@dev
 pip install -U -r requirements.txt
