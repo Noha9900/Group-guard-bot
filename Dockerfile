@@ -1,25 +1,25 @@
-# Use a lightweight Python base image
-FROM python:3.10-slim
+# We MUST use Python 3.10 because py-tgcalls v1.x doesn't work on 3.12/3.13
+FROM python:3.10-slim-buster
 
-# Install system dependencies
-# FFmpeg is CRITICAL for streaming (pytgcalls) and downloading (yt-dlp)
+# Set the working directory
+WORKDIR /app
+
+# Install FFmpeg (Required for streaming & yt-dlp) and git
 RUN apt-get update && \
     apt-get install -y ffmpeg git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Set the working directory inside the container
-WORKDIR /app
-
-# Copy the requirements file first to leverage Docker cache
+# Copy requirements and install dependencies
 COPY requirements.txt .
-
-# Install Python libraries
 RUN pip install --no-cache-dir -U pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your bot's code
+# Copy the rest of the bot files
 COPY . .
 
-# Command to start the bot
-CMD ["python", "bot.py"]
+# Grant execution permissions to the start script
+RUN chmod +x start.sh
+
+# Start the bot
+CMD ["bash", "start.sh"]
