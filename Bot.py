@@ -1,3 +1,4 @@
+import logging
 import os
 import asyncio
 import yt_dlp
