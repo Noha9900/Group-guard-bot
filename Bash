@@ -1,0 +1,10 @@
+#!/bin/bash
+# Script to keep the bot running 24/7
+
+until python3 bot.py; do
+    echo "'bot.py' crashed with exit code $?. Restarting in 5 seconds..." >&2
+    sleep 5
+done
+
+chmod +x run.sh
+nohup ./run.sh &
