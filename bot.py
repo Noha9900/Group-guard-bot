@@ -4,32 +4,27 @@ import yt_dlp
 from aiohttp import web
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
+# SWITCHING BACK TO STABLE IMPORTS
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream
-
-# --- FIX for GroupcallForbidden ImportError ---
-# Newer Pyrogram removed GroupcallForbidden, so we alias RPCError.
-from pyrogram.errors import RPCError
-GroupcallForbidden = RPCError
-# ------------------------------------------------
+from pytgcalls.types import Update
+from pytgcalls.types.input_stream import VideoPiped, AudioPiped
 
 # ================= CONFIGURATION =================
 API_ID = 12345678  # Your API ID
 API_HASH = "your_api_hash_here"
 BOT_TOKEN = "your_bot_token_here"
-OWNER_ID = 123456789  # Your Telegram User ID (for admin commands)
+OWNER_ID = 123456789  # Your User ID
 
 BAD_WORDS = ["badword1", "racist", "scam", "cheat"]
 WARNING_LIMIT = 3
-WELCOME_DELAY = 20  # Seconds
+WELCOME_DELAY = 20
 DOWNLOAD_PATH = "./downloads"
-PORT = int(os.environ.get("PORT", 8080))  # Port 8080 for Render
+PORT = int(os.environ.get("PORT", 8080))
 
 # Initialize Clients
 app = Client("SuperBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 call_py = PyTgCalls(app)
 
-# In-memory database
 user_warnings = {}
 locked_groups = []
 
@@ -170,7 +165,7 @@ async def broadcast_post(client, message):
     await message.reply_to_message.copy(message.chat.id)
     await message.reply("✅ Post broadcasted successfully.")
 
-# ================= FEATURE 5: STREAMING =================
+# ================= FEATURE 5: STREAMING (STABLE v1.2.0) =================
 @app.on_message(filters.command("stream") & filters.user(OWNER_ID))
 async def stream_handler(client, message):
     if not message.reply_to_message or not message.reply_to_message.video:
@@ -181,12 +176,10 @@ async def stream_handler(client, message):
     await status.edit("▶️ Starting Stream...")
 
     try:
-        await call_py.play(
+        # Using VideoPiped (Stable v1.2.0 method)
+        await call_py.join_group_call(
             message.chat.id,
-            MediaStream(
-                file_path,
-                video_flags=MediaStream.Flags.IGNORE_ERRORS
-            )
+            VideoPiped(file_path)
         )
     except Exception as e:
         await status.edit(f"Error joining call: {e}")
