@@ -10,10 +10,10 @@ from pytgcalls.types import Update
 from pytgcalls.types.input_stream import VideoPiped, AudioPiped
 
 # ================= CONFIGURATION =================
-API_ID = 12345678  # Your API ID
-API_HASH = "your_api_hash_here"
-BOT_TOKEN = "your_bot_token_here"
-OWNER_ID = 123456789  # Your User ID
+API_ID = 36982189  # Your API ID
+API_HASH = "d3ec5feee7342b692e7b5370fb9c8db7"
+BOT_TOKEN = "8544773286:AAHkDc5awfunKMaO-407F7JtcmrY1OmazRc"
+OWNER_ID = 8072674531  # Your User ID
 
 BAD_WORDS = ["badword1", "racist", "scam", "cheat"]
 WARNING_LIMIT = 3
