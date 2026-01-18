@@ -1,11 +1,10 @@
-import logging
 import os
 import asyncio
 import yt_dlp
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioPiped, VideoPiped
+from pytgcalls.types import MediaStream
 
 # ================= CONFIGURATION =================
 # Replace these with your actual values
@@ -138,14 +137,21 @@ async def downloader(client, message):
         return await message.reply("Please provide a link! Usage: `/dl https://...`")
     
     url = message.text.split(None, 1)[1]
-    status_msg = await message.reply("⚡ Downloading...")
     
-    # Configure yt-dlp for best quality
+    # Visual Feedback
+    if url.endswith(".html") or url.endswith(".htm"):
+        status_msg = await message.reply("🔎 Analyzing HTML page for video content...")
+    else:
+        status_msg = await message.reply("⚡ Downloading...")
+    
+    # Configure yt-dlp
     ydl_opts = {
         'outtmpl': f'{DOWNLOAD_PATH}/%(title)s.%(ext)s',
-        'format': 'best',
+        'format': 'bestvideo+bestaudio/best', 
         'noplaylist': True,
-        'quiet': True
+        'quiet': True,
+        'geo_bypass': True,
+        'nocheckcertificate': True,
     }
     
     try:
@@ -154,9 +160,17 @@ async def downloader(client, message):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
         
+        # Fallback check if extension changed
+        if not os.path.exists(filename):
+            base_name = os.path.splitext(filename)[0]
+            for ext in ['.mp4', '.mkv', '.webm']:
+                if os.path.exists(base_name + ext):
+                    filename = base_name + ext
+                    break
+        
         # Upload
         await status_msg.edit("⬆️ Uploading to Telegram...")
-        await client.send_document(message.chat.id, document=filename)
+        await client.send_document(message.chat.id, document=filename, caption=f"Downloaded from: {url}")
         
         # Cleanup
         os.remove(filename)
@@ -177,7 +191,7 @@ async def broadcast_post(client, message):
     await message.reply_to_message.copy(message.chat.id)
     await message.reply("✅ Post broadcasted successfully.")
 
-# ================= FEATURE 5: STREAMING =================
+# ================= FEATURE 5: STREAMING (Fixed for PyTgCalls v2) =================
 
 @app.on_message(filters.command("stream") & filters.user(OWNER_ID))
 async def stream_handler(client, message):
@@ -186,15 +200,20 @@ async def stream_handler(client, message):
         return await message.reply("Please reply to a video file to stream it!")
 
     status = await message.reply("📥 Downloading media for stream...")
+    
+    # Download the file
     file_path = await message.reply_to_message.download(file_name=DOWNLOAD_PATH + "/")
     
     await status.edit("▶️ Starting Stream...")
     
     try:
-        await call_py.join_group_call(
+        # NEW CODE for PyTgCalls v2.0+
+        await call_py.play(
             message.chat.id,
-            VideoPiped(file_path),
-            stream_type=StreamType().local_stream
+            MediaStream(
+                file_path,
+                video_flags=MediaStream.Flags.IGNORE_ERRORS
+            )
         )
     except Exception as e:
         await status.edit(f"Error joining call: {e}")
