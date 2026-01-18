@@ -1,31 +1,25 @@
-# Use a lightweight Python base
-FROM python:3.10-slim-buster
+# Use a lightweight Python base image
+FROM python:3.10-slim
 
-# Set working directory
+# Install system dependencies
+# FFmpeg is CRITICAL for streaming (pytgcalls) and downloading (yt-dlp)
+RUN apt-get update && \
+    apt-get install -y ffmpeg git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set the working directory inside the container
 WORKDIR /app
 
-# Install system-level dependencies for streaming and mirroring
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    aria2 \
-    rclone \
-    git \
-    curl \
-    python3-dev \
-    build-essential \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python libraries
+# Copy the requirements file first to leverage Docker cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the bot's code
+# Install Python libraries
+RUN pip install --no-cache-dir -U pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of your bot's code
 COPY . .
 
-# Environment Variables (Best practice: pass these at runtime)
-ENV PYTHONUNBUFFERED=1
-
-# Start the bot
-CMD ["python3", "bot.py"]
-
+# Command to start the bot
+CMD ["python", "bot.py"]
