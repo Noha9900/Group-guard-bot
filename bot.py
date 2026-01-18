@@ -165,24 +165,50 @@ async def broadcast_post(client, message):
     await message.reply_to_message.copy(message.chat.id)
     await message.reply("✅ Post broadcasted successfully.")
 
-# ================= FEATURE 5: STREAMING (STABLE v1.2.0) =================
+# ================= FEATURE 5: STREAMING (STABLE v1.2.9) =================
 @app.on_message(filters.command("stream") & filters.user(OWNER_ID))
 async def stream_handler(client, message):
     if not message.reply_to_message or not message.reply_to_message.video:
         return await message.reply("Please reply to a video file to stream it!")
 
     status = await message.reply("📥 Downloading media for stream...")
-    file_path = await message.reply_to_message.download(file_name=DOWNLOAD_PATH + "/")
+    
+    # Download to a specific filename so we can track it
+    file_path = await message.reply_to_message.download(file_name=f"{DOWNLOAD_PATH}/{message.chat.id}.mp4")
+    
     await status.edit("▶️ Starting Stream...")
 
     try:
-        # Using VideoPiped (Stable v1.2.0 method)
         await call_py.join_group_call(
             message.chat.id,
-            VideoPiped(file_path)
+            VideoPiped(file_path),
         )
     except Exception as e:
         await status.edit(f"Error joining call: {e}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+# NEW: Clean up file when stream ends
+@call_py.on_stream_end()
+async def on_stream_end(client: PyTgCalls, update: Update):
+    chat_id = update.chat_id
+    print(f"Stream ended in chat {chat_id}")
+    
+    # Construct the filename based on the logic in stream_handler
+    filename = f"{DOWNLOAD_PATH}/{chat_id}.mp4"
+    
+    if os.path.exists(filename):
+        try:
+            os.remove(filename)
+            print(f"Deleted {filename}")
+        except Exception as e:
+            print(f"Failed to delete file: {e}")
+            
+    # Optional: Leave the call
+    try:
+        await client.leave_group_call(chat_id)
+    except:
+        pass
 
 # ================= RUNNER =================
 async def main():
