@@ -5,5 +5,9 @@ if [ ! -d "downloads" ]; then
   mkdir downloads
 fi
 
+pip uninstall pytgcalls ntgcalls
+pip install pytgcalls
+pip install --upgrade pytgcalls ntgcalls
+pip install pytgcalls==1.0.0.dev21 ntgcalls==1.0.0.dev21
 echo "--- Starting Bot ---"
 python3 bot.py
