@@ -1,2 +1,3 @@
 pip install --upgrade pip
 pip install -r requirements.txt
+pip install py-tgcalls==1.2.9
