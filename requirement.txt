@@ -1,21 +1,7 @@
-# Core Bot Framework (Pyrogram is recommended for high performance)
 pyrogram
 tgcrypto
-
-# Group Voice/Video Chat Streaming
-pytgcalls[ffmpeg]
-
-# Task Scheduling for Auto-Delete and Periodic Posts
-apscheduler
-
-# Database for 24/7 Persistence (MongoDB)
-motor
-
-# Multimedia Handling and API interaction
+pytgcalls
 yt-dlp
-aiohttp
-aiofiles
-
-# Optional: For web-based health checks on Render
-flask
-gunicorn
+python-dotenv
+motor
+apscheduler
