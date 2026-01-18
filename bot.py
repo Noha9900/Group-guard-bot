@@ -1,6 +1,7 @@
 import os
 import asyncio
 import yt_dlp
+from aiohttp import web
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pytgcalls import PyTgCalls
@@ -18,6 +19,7 @@ BAD_WORDS = ["badword1", "racist", "scam", "cheat"]
 WARNING_LIMIT = 3
 WELCOME_DELAY = 20  # Seconds
 DOWNLOAD_PATH = "./downloads"
+PORT = int(os.environ.get("PORT", 8080)) # Port 8080 for Render
 
 # Initialize Clients
 app = Client("SuperBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -30,6 +32,20 @@ locked_groups = []
 # Ensure download directory exists
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
+
+# ================= WEB SERVER (PORT 8080) =================
+
+async def health_check(request):
+    return web.Response(text="Bot is Alive!", status=200)
+
+async def start_web_server():
+    server = web.Application()
+    server.add_routes([web.get('/', health_check)])
+    runner = web.AppRunner(server)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"--- Web Server running on Port {PORT} ---")
 
 # ================= FEATURE 1: GROUP MANAGEMENT =================
 
@@ -222,6 +238,10 @@ async def stream_handler(client, message):
 
 async def main():
     print("--- Starting PowerBot 24/7 ---")
+    
+    # Start Web Server for Render Health Checks
+    await start_web_server()
+    
     await app.start()
     await call_py.start()
     print("--- Bot is Online ---")
