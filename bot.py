@@ -18,12 +18,11 @@ OWNER_ID = 8072674531  # Your User ID
 GROUP_LINK = "https://t.me/+AbCdEfGhIjK12345" 
 
 # NEW: Your App's Public URL (Required for stream links to work)
-# Example: "https://my-bot-app.onrender.com"
 BASE_URL = os.environ.get("BASE_URL", "http://0.0.0.0:8080") 
 
 BAD_WORDS = ["badword1", "racist", "scam", "cheat"]
 WARNING_LIMIT = 3
-WELCOME_DELAY = 20
+WELCOME_DELAY = 60 # Increased delay for better readability
 DOWNLOAD_PATH = "./downloads"
 PORT = int(os.environ.get("PORT", 8080))
 
@@ -45,7 +44,6 @@ async def start_web_server():
     server = web.Application()
     server.add_routes([
         web.get('/', health_check),
-        # NEW: Route to serve downloaded files for streaming
         web.static('/watch', DOWNLOAD_PATH)
     ])
     runner = web.AppRunner(server)
@@ -56,37 +54,46 @@ async def start_web_server():
 
 # ================= FEATURE 1: WELCOME & SUBSCRIPTION =================
 
-# 1. Private Chat Welcome (Start Command)
 @app.on_message(filters.command("start") & filters.private)
 async def start_private(client, message):
     user = message.from_user
     text = (
-        f"✨ **Hello, {user.mention}!** ✨\n\n"
+        f"✨ **Greetings, {user.mention}!** ✨\n\n"
         "🤖 **I am SuperBot**\n"
-        "I am fully operational and ready to serve you.\n\n"
-        "📌 **My Systems:**\n"
-        "🔹 Channel & Group Management\n"
-        "🔹 Media Downloader\n"
-        "🔹 Streaming\n\n"
-        f"🔗 **Join our Official Group here:**\n{GROUP_LINK}"
+        "I am your advanced automated assistant.\n\n"
+        "📌 **My Capabilities:**\n"
+        "🔹 **Group Security:** Anti-spam & Moderation\n"
+        "🔹 **Media:** High-Speed Downloader & Streamer\n"
+        "🔹 **Analysis:** User Activity Scanning\n\n"
+        f"🔗 **Join our Official Community:**\n{GROUP_LINK}"
     )
     await message.reply(text, disable_web_page_preview=True)
 
-# 2. Universal Welcome (Groups AND Channels)
+# UPDATED: Very Detailed Welcome Message
 @app.on_message(filters.new_chat_members)
 async def welcome_handler(client, message):
     chat_id = message.chat.id
     chat_title = message.chat.title
     
     for member in message.new_chat_members:
-        # A. Public Welcome
+        # A. Public Welcome (Detailed & Attractive)
         if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
             welcome_text = (
-                f"✨ **Welcome, {member.mention}!** ✨\n\n"
-                f"🌟 Thrilled to have you in **{chat_title}**!\n"
-                "──────────────────────"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🎉 **WELCOME TO {chat_title.upper()}!** 🎉\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"👋 **Hello {member.mention}!**\n"
+                f"We are absolutely thrilled to have you here.\n\n"
+                f"🔰 **User ID:** `{member.id}`\n"
+                f"📅 **Joined:** Just now\n\n"
+                f"💡 **Things to do here:**\n"
+                f"• Read the pinned rules.\n"
+                f"• Respect other members.\n"
+                f"• Enjoy the content!\n\n"
+                f"🚀 *Make yourself at home!*"
             )
             try:
+                # Send welcome and auto-delete after 60s
                 welcome_msg = await message.reply(welcome_text)
                 await asyncio.sleep(WELCOME_DELAY)
                 await welcome_msg.delete()
@@ -98,13 +105,85 @@ async def welcome_handler(client, message):
             dm_text = (
                 f"👋 **Hello {member.mention}!**\n\n"
                 f"Thank you for joining **{chat_title}**.\n\n"
-                f"🎁 **Here is the exclusive Group Link you need:**\n"
+                f"🎁 **Here is the exclusive Group Link:**\n"
                 f"👉 {GROUP_LINK}\n\n"
-                "*(I sent this because you subscribed to our channel/group)*"
+                "*(I sent this automatically because you joined our community)*"
             )
             await client.send_message(member.id, dm_text, disable_web_page_preview=True)
         except Exception as e:
             print(f"Could not DM user {member.id}: {e}")
+
+# ================= FEATURE 2: MODERATION & ADMIN TOOLS =================
+
+# NEW: Ban Command
+@app.on_message(filters.command("ban") & filters.user(OWNER_ID))
+async def ban_user(client, message):
+    if not message.reply_to_message:
+        return await message.reply("❌ Reply to a user to ban them.")
+    
+    user_id = message.reply_to_message.from_user.id
+    try:
+        await client.ban_chat_member(message.chat.id, user_id)
+        await message.reply(f"🚫 **Banned** {message.reply_to_message.from_user.mention}.")
+    except Exception as e:
+        await message.reply(f"❌ Error: {e}")
+
+# NEW: Unban Command
+@app.on_message(filters.command("unban") & filters.user(OWNER_ID))
+async def unban_user(client, message):
+    if not message.reply_to_message:
+        return await message.reply("❌ Reply to a user to unban them.")
+    
+    user_id = message.reply_to_message.from_user.id
+    try:
+        await client.unban_chat_member(message.chat.id, user_id)
+        await message.reply(f"✅ **Unbanned** {message.reply_to_message.from_user.mention}.")
+    except Exception as e:
+        await message.reply(f"❌ Error: {e}")
+
+# NEW: Active vs Inactive User Scan
+@app.on_message(filters.command("scan_members") & filters.user(OWNER_ID))
+async def scan_members(client, message):
+    status_msg = await message.reply("📊 **Scanning Group Members...**\nThis may take a moment.")
+    chat_id = message.chat.id
+    
+    online_count = 0
+    offline_count = 0
+    report_lines = []
+    
+    report_lines.append(f"REPORT FOR GROUP: {message.chat.title}")
+    report_lines.append("=========================================")
+    
+    async for member in client.get_chat_members(chat_id):
+        user = member.user
+        status_text = "OFFLINE"
+        
+        # Determine Status
+        if user.status == enums.UserStatus.ONLINE:
+            status_text = "ONLINE (Active)"
+            online_count += 1
+        else:
+            status_text = "OFFLINE (Inactive)"
+            offline_count += 1
+            
+        report_lines.append(f"ID: {user.id} | Name: {user.first_name} | Status: {status_text}")
+    
+    # Save to file
+    filename = "member_report.txt"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(report_lines))
+        
+    summary = (
+        f"✅ **Scan Complete!**\n\n"
+        f"🟢 **Online/Active:** {online_count}\n"
+        f"🔴 **Offline/Inactive:** {offline_count}\n"
+        f"👥 **Total Scanned:** {online_count + offline_count}\n\n"
+        f"📄 *See attached file for full ID list.*"
+    )
+    
+    await message.reply_document(document=filename, caption=summary)
+    os.remove(filename)
+    await status_msg.delete()
 
 @app.on_message(filters.command("clean_ghosts") & filters.user(OWNER_ID))
 async def remove_deleted_users(client, message):
@@ -120,31 +199,25 @@ async def remove_deleted_users(client, message):
                 pass
     await status_msg.edit(f"✅ Removed {count} deleted accounts.")
 
-# ================= FEATURE 2: MODERATION (Groups Only) =================
 @app.on_message(filters.group & filters.text & ~filters.user(OWNER_ID))
 async def moderation_handler(client, message):
     if message.sender_chat:
         return
-
     text = message.text.lower()
     user_id = message.from_user.id
     chat_id = message.chat.id
-
     if chat_id in locked_groups:
         await message.delete()
         return
-
     if any(word in text for word in BAD_WORDS):
         if user_id not in user_warnings:
             user_warnings[user_id] = 0
         user_warnings[user_id] += 1
         current_warns = user_warnings[user_id]
-
         try:
             await message.delete()
         except:
             pass
-
         if current_warns >= WARNING_LIMIT:
             try:
                 await client.ban_chat_member(chat_id, user_id)
@@ -216,7 +289,6 @@ async def broadcast_post(client, message):
 # ================= FEATURE 5: STREAMABLE LINKS =================
 @app.on_message(filters.command("stream") & filters.user(OWNER_ID))
 async def stream_handler(client, message):
-    # Check if user replied to media
     if not message.reply_to_message:
         return await message.reply("Please reply to a video or file to generate a stream link.")
     
@@ -227,12 +299,8 @@ async def stream_handler(client, message):
     status = await message.reply("📥 Downloading media to server...")
     
     try:
-        # Download the file
         file_path = await message.reply_to_message.download(file_name=f"{DOWNLOAD_PATH}/")
         file_name = os.path.basename(file_path)
-        
-        # Generate the Stream Link
-        # Uses the BASE_URL defined at the top
         stream_link = f"{BASE_URL}/watch/{file_name}"
         
         await status.edit(
@@ -241,7 +309,6 @@ async def stream_handler(client, message):
             f"⚠️ *Link expires in 30 minutes.*"
         )
         
-        # Auto-delete file after 30 minutes to save server space
         await asyncio.sleep(1800)
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -261,4 +328,4 @@ async def main():
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main()) 
+    loop.run_until_complete(main())
