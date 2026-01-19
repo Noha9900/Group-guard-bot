@@ -2,9 +2,8 @@ import os
 import asyncio
 import yt_dlp
 from aiohttp import web
-from pyrogram import Client, filters, idle
+from pyrogram import Client, filters, idle, enums
 from pyrogram.types import Message
-# SWITCHING BACK TO STABLE IMPORTS
 from pytgcalls import PyTgCalls
 from pytgcalls.types import Update
 from pytgcalls.types.input_stream import VideoPiped, AudioPiped
@@ -14,6 +13,9 @@ API_ID = 36982189  # Your API ID
 API_HASH = "d3ec5feee7342b692e7b5370fb9c8db7"
 BOT_TOKEN = "8544773286:AAHkDc5awfunKMaO-407F7JtcmrY1OmazRc"
 OWNER_ID = 8072674531  # Your User ID
+
+# NEW: Link to send privately to subscribers
+GROUP_LINK = "https://t.me/+AbCdEfGhIjK12345" 
 
 BAD_WORDS = ["badword1", "racist", "scam", "cheat"]
 WARNING_LIMIT = 3
@@ -44,17 +46,62 @@ async def start_web_server():
     await site.start()
     print(f"--- Web Server running on Port {PORT} ---")
 
-# ================= FEATURE 1: GROUP MANAGEMENT =================
+# ================= FEATURE 1: WELCOME & SUBSCRIPTION =================
+
+# 1. Private Chat Welcome (Start Command)
+@app.on_message(filters.command("start") & filters.private)
+async def start_private(client, message):
+    user = message.from_user
+    text = (
+        f"✨ **Hello, {user.mention}!** ✨\n\n"
+        "🤖 **I am SuperBot**\n"
+        "I am fully operational and ready to serve you.\n\n"
+        "📌 **My Systems:**\n"
+        "🔹 Channel & Group Management\n"
+        "🔹 Media Downloader\n"
+        "🔹 Streaming\n\n"
+        f"🔗 **Join our Official Group here:**\n{GROUP_LINK}"
+    )
+    await message.reply(text, disable_web_page_preview=True)
+
+# 2. Universal Welcome (Groups AND Channels)
+# This handles new members in Groups and new Subscribers in Channels
 @app.on_message(filters.new_chat_members)
 async def welcome_handler(client, message):
+    chat_id = message.chat.id
+    chat_title = message.chat.title
+    
     for member in message.new_chat_members:
-        welcome_msg = await message.reply(f"Welcome {member.mention} to the group! 🌟")
-        await asyncio.sleep(WELCOME_DELAY)
+        # A. Public Welcome (Only in Groups, not Channels to avoid spam)
+        if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
+            welcome_text = (
+                f"✨ **Welcome, {member.mention}!** ✨\n\n"
+                f"🌟 Thrilled to have you in **{chat_title}**!\n"
+                "──────────────────────"
+            )
+            try:
+                welcome_msg = await message.reply(welcome_text)
+                # Auto-delete public welcome
+                await asyncio.sleep(WELCOME_DELAY)
+                await welcome_msg.delete()
+            except:
+                pass
+
+        # B. Private DM with Group Link (Works for Groups AND Channels)
+        # Note: This only works if the user has previously started the bot private.
         try:
-            await welcome_msg.delete()
-            await message.delete()
-        except Exception:
-            pass
+            dm_text = (
+                f"👋 **Hello {member.mention}!**\n\n"
+                f"Thank you for joining **{chat_title}**.\n\n"
+                f"🎁 **Here is the exclusive Group Link you need:**\n"
+                f"👉 {GROUP_LINK}\n\n"
+                "*(I sent this because you subscribed to our channel/group)*"
+            )
+            await client.send_message(member.id, dm_text, disable_web_page_preview=True)
+        except Exception as e:
+            # Common Error: "Peer hasn't started the bot"
+            # We ignore this error silently so the bot doesn't crash
+            print(f"Could not DM user {member.id}: {e}")
 
 @app.on_message(filters.command("clean_ghosts") & filters.user(OWNER_ID))
 async def remove_deleted_users(client, message):
@@ -70,14 +117,13 @@ async def remove_deleted_users(client, message):
                 pass
     await status_msg.edit(f"✅ Removed {count} deleted accounts.")
 
-@app.on_message(filters.command("stats") & filters.user(OWNER_ID))
-async def count_users(client, message):
-    total = await client.get_chat_members_count(message.chat.id)
-    await message.reply(f"📊 Total Members: {total}")
-
-# ================= FEATURE 2: MODERATION =================
+# ================= FEATURE 2: MODERATION (Groups Only) =================
 @app.on_message(filters.group & filters.text & ~filters.user(OWNER_ID))
 async def moderation_handler(client, message):
+    # Skip moderation if channel messages are linked (sender_chat)
+    if message.sender_chat:
+        return
+
     text = message.text.lower()
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -103,7 +149,7 @@ async def moderation_handler(client, message):
                 await message.reply(f"🚫 {message.from_user.mention} banned for exceeding warnings.")
                 user_warnings[user_id] = 0
             except:
-                await message.reply("⚠️ user exceeded warnings but I lack permission to ban.")
+                pass
         else:
             await message.reply(f"⚠️ {message.from_user.mention}, watch your language! Warning {current_warns}/{WARNING_LIMIT}")
 
@@ -165,15 +211,13 @@ async def broadcast_post(client, message):
     await message.reply_to_message.copy(message.chat.id)
     await message.reply("✅ Post broadcasted successfully.")
 
-# ================= FEATURE 5: STREAMING (STABLE v1.2.9) =================
+# ================= FEATURE 5: STREAMING =================
 @app.on_message(filters.command("stream") & filters.user(OWNER_ID))
 async def stream_handler(client, message):
     if not message.reply_to_message or not message.reply_to_message.video:
         return await message.reply("Please reply to a video file to stream it!")
 
     status = await message.reply("📥 Downloading media for stream...")
-    
-    # Download to a specific filename so we can track it
     file_path = await message.reply_to_message.download(file_name=f"{DOWNLOAD_PATH}/{message.chat.id}.mp4")
     
     await status.edit("▶️ Starting Stream...")
@@ -188,23 +232,15 @@ async def stream_handler(client, message):
         if os.path.exists(file_path):
             os.remove(file_path)
 
-# NEW: Clean up file when stream ends
 @call_py.on_stream_end()
 async def on_stream_end(client: PyTgCalls, update: Update):
     chat_id = update.chat_id
-    print(f"Stream ended in chat {chat_id}")
-    
-    # Construct the filename based on the logic in stream_handler
     filename = f"{DOWNLOAD_PATH}/{chat_id}.mp4"
-    
     if os.path.exists(filename):
         try:
             os.remove(filename)
-            print(f"Deleted {filename}")
-        except Exception as e:
-            print(f"Failed to delete file: {e}")
-            
-    # Optional: Leave the call
+        except:
+            pass
     try:
         await client.leave_group_call(chat_id)
     except:
@@ -212,7 +248,7 @@ async def on_stream_end(client: PyTgCalls, update: Update):
 
 # ================= RUNNER =================
 async def main():
-    print("--- Starting PowerBot 24/7 ---")
+    print("--- Starting SuperBot 24/7 ---")
     await start_web_server()
     await app.start()
     await call_py.start()
