@@ -47,6 +47,43 @@ async def is_admin(client, chat_id, user_id):
         return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
     except: return False
 
+# ================= NEW: GROUP GUARD FEATURES =================
+
+# 1. Anti-Link (Removes links from members instantly)
+@app.on_message(filters.group & ~filters.service, group=-1)
+async def anti_link_handler(client, message):
+    if await is_admin(client, message.chat.id, message.from_user.id):
+        return
+    
+    # Check for URLs in text or caption
+    entities = message.entities or message.caption_entities
+    if entities:
+        for entity in entities:
+            if entity.type in [enums.MessageEntityType.URL, enums.MessageEntityType.TEXT_LINK]:
+                await message.delete()
+                return
+
+# 2. Join/Left Tag Cleaner & Auto-Welcome
+@app.on_message(filters.service, group=-2)
+async def service_handler(client, message):
+    # Remove "User Joined" or "User Left" messages instantly
+    if message.new_chat_members or message.left_chat_member:
+        asyncio.create_task(smart_vanish(message, 0))
+    
+    # Send Welcome Message for new members
+    if message.new_chat_members:
+        for member in message.new_chat_members:
+            welcome_text = (
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💐 **Hello, Welcome to our Group!**\n\n"
+                f"👤 **Subscriber:** {member.mention}\n"
+                f"🆔 **ID:** `{member.id}`\n"
+                f"📅 **Date:** `{datetime.datetime.now().strftime('%d %b %Y')}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━"
+            )
+            w_msg = await message.reply(welcome_text)
+            asyncio.create_task(smart_vanish(w_msg, 20)) # Welcome vanishes after 20s
+
 # ================= ADMINISTRATIVE & MODERATION =================
 
 @app.on_message(filters.command("restart") & filters.user(OWNER_ID))
@@ -313,4 +350,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(main())
-    
+        
