@@ -17,6 +17,10 @@ OWNER_ID = 8072674531  # Your User ID
 # NEW: Link to send privately to subscribers
 GROUP_LINK = "https://t.me/+AbCdEfGhIjK12345" 
 
+# NEW: Your App's Public URL (Required for stream links to work)
+# Example: "https://my-bot-app.onrender.com"
+BASE_URL = os.environ.get("BASE_URL", "http://0.0.0.0:8080") 
+
 BAD_WORDS = ["badword1", "racist", "scam", "cheat"]
 WARNING_LIMIT = 3
 WELCOME_DELAY = 20
@@ -39,7 +43,11 @@ async def health_check(request):
 
 async def start_web_server():
     server = web.Application()
-    server.add_routes([web.get('/', health_check)])
+    server.add_routes([
+        web.get('/', health_check),
+        # NEW: Route to serve downloaded files for streaming
+        web.static('/watch', DOWNLOAD_PATH)
+    ])
     runner = web.AppRunner(server)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
@@ -65,14 +73,13 @@ async def start_private(client, message):
     await message.reply(text, disable_web_page_preview=True)
 
 # 2. Universal Welcome (Groups AND Channels)
-# This handles new members in Groups and new Subscribers in Channels
 @app.on_message(filters.new_chat_members)
 async def welcome_handler(client, message):
     chat_id = message.chat.id
     chat_title = message.chat.title
     
     for member in message.new_chat_members:
-        # A. Public Welcome (Only in Groups, not Channels to avoid spam)
+        # A. Public Welcome
         if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
             welcome_text = (
                 f"✨ **Welcome, {member.mention}!** ✨\n\n"
@@ -81,14 +88,12 @@ async def welcome_handler(client, message):
             )
             try:
                 welcome_msg = await message.reply(welcome_text)
-                # Auto-delete public welcome
                 await asyncio.sleep(WELCOME_DELAY)
                 await welcome_msg.delete()
             except:
                 pass
 
-        # B. Private DM with Group Link (Works for Groups AND Channels)
-        # Note: This only works if the user has previously started the bot private.
+        # B. Private DM with Group Link
         try:
             dm_text = (
                 f"👋 **Hello {member.mention}!**\n\n"
@@ -99,8 +104,6 @@ async def welcome_handler(client, message):
             )
             await client.send_message(member.id, dm_text, disable_web_page_preview=True)
         except Exception as e:
-            # Common Error: "Peer hasn't started the bot"
-            # We ignore this error silently so the bot doesn't crash
             print(f"Could not DM user {member.id}: {e}")
 
 @app.on_message(filters.command("clean_ghosts") & filters.user(OWNER_ID))
@@ -120,7 +123,6 @@ async def remove_deleted_users(client, message):
 # ================= FEATURE 2: MODERATION (Groups Only) =================
 @app.on_message(filters.group & filters.text & ~filters.user(OWNER_ID))
 async def moderation_handler(client, message):
-    # Skip moderation if channel messages are linked (sender_chat)
     if message.sender_chat:
         return
 
@@ -211,40 +213,41 @@ async def broadcast_post(client, message):
     await message.reply_to_message.copy(message.chat.id)
     await message.reply("✅ Post broadcasted successfully.")
 
-# ================= FEATURE 5: STREAMING =================
+# ================= FEATURE 5: STREAMABLE LINKS =================
 @app.on_message(filters.command("stream") & filters.user(OWNER_ID))
 async def stream_handler(client, message):
-    if not message.reply_to_message or not message.reply_to_message.video:
-        return await message.reply("Please reply to a video file to stream it!")
-
-    status = await message.reply("📥 Downloading media for stream...")
-    file_path = await message.reply_to_message.download(file_name=f"{DOWNLOAD_PATH}/{message.chat.id}.mp4")
+    # Check if user replied to media
+    if not message.reply_to_message:
+        return await message.reply("Please reply to a video or file to generate a stream link.")
     
-    await status.edit("▶️ Starting Stream...")
+    media = message.reply_to_message.video or message.reply_to_message.document or message.reply_to_message.audio
+    if not media:
+        return await message.reply("❌ No valid media found in replied message.")
 
+    status = await message.reply("📥 Downloading media to server...")
+    
     try:
-        await call_py.join_group_call(
-            message.chat.id,
-            VideoPiped(file_path),
+        # Download the file
+        file_path = await message.reply_to_message.download(file_name=f"{DOWNLOAD_PATH}/")
+        file_name = os.path.basename(file_path)
+        
+        # Generate the Stream Link
+        # Uses the BASE_URL defined at the top
+        stream_link = f"{BASE_URL}/watch/{file_name}"
+        
+        await status.edit(
+            f"✅ **Stream Link Generated!**\n\n"
+            f"🔗 **Link:** {stream_link}\n\n"
+            f"⚠️ *Link expires in 30 minutes.*"
         )
-    except Exception as e:
-        await status.edit(f"Error joining call: {e}")
+        
+        # Auto-delete file after 30 minutes to save server space
+        await asyncio.sleep(1800)
         if os.path.exists(file_path):
             os.remove(file_path)
-
-@call_py.on_stream_end()
-async def on_stream_end(client: PyTgCalls, update: Update):
-    chat_id = update.chat_id
-    filename = f"{DOWNLOAD_PATH}/{chat_id}.mp4"
-    if os.path.exists(filename):
-        try:
-            os.remove(filename)
-        except:
-            pass
-    try:
-        await client.leave_group_call(chat_id)
-    except:
-        pass
+            
+    except Exception as e:
+        await status.edit(f"❌ Error: {e}")
 
 # ================= RUNNER =================
 async def main():
@@ -258,4 +261,4 @@ async def main():
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(main()) 
