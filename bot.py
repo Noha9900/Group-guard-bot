@@ -1,4 +1,5 @@
-import os
+
+    import os
 import sys
 import asyncio
 import datetime
@@ -18,7 +19,6 @@ BOT_TOKEN = "8544773286:AAHkDc5awfunKMaO-407F7JtcmrY1OmazRc"
 OWNER_ID = 8072674531 
 
 # List of Group IDs for broadcasting (Include the -100 prefix)
-# Example: [-100123456789]
 GROUPS_TO_BROADCAST = [] 
 
 DOWNLOAD_PATH = "./downloads"
@@ -77,7 +77,6 @@ async def lock_unlock_handler(client, message):
     if not await is_admin(client, message.chat.id, message.from_user.id): return
     
     is_lock = message.command[0].lower() == "lock"
-    # Setting permissions to False for lock, True for unlock
     permissions = ChatPermissions(
         can_send_messages=not is_lock,
         can_send_media_messages=not is_lock,
@@ -99,7 +98,6 @@ async def broadcast_handler(client, message):
     
     status = await message.reply("📢 **Broadcasting to Bot and Groups...**")
     sent = 0
-    # Copy to the bot's own chat (Private) and all authorized groups
     targets = [message.from_user.id] + GROUPS_TO_BROADCAST
     for chat_id in targets:
         try:
@@ -153,7 +151,6 @@ async def zip_unzip_handler(client, message):
         status = await message.reply("📦 **Zipping Files...**")
         files_to_zip = []
         
-        # Handle Media Groups (Albums)
         if message.reply_to_message.media_group_id:
             album = await client.get_media_group(message.chat.id, message.reply_to_message.id)
             for item in album:
@@ -191,6 +188,96 @@ async def zip_unzip_handler(client, message):
             await status.edit(f"❌ Failed: {e}")
         shutil.rmtree(ext_dir, ignore_errors=True); os.remove(zip_file)
 
+# ================= FIXED COMMANDS: STREAM & DL =================
+
+@app.on_message(filters.command("stream"))
+async def stream_handler(client, message):
+    asyncio.create_task(smart_vanish(message, 1))
+    if not await is_admin(client, message.chat.id, message.from_user.id): return
+    
+    target = message.reply_to_message
+    if not target:
+        return await message.reply("❌ Reply to a video, file, or link to stream.")
+
+    status = await message.reply("🔄 **Generating Stream Link...**")
+    
+    try:
+        if target.text or target.caption:
+            url = target.text or target.caption
+            ydl_opts = {'format': 'best', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                stream_link = info.get('url')
+        elif target.video or target.document:
+            file_path = await client.download_media(target, file_name=f"{DOWNLOAD_PATH}/")
+            stream_link = f"{BASE_URL}/watch/{os.path.basename(file_path)}"
+        else:
+            return await status.edit("❌ Unsupported format.")
+
+        await status.edit(f"🎬 **Stream Link Ready:**\n\n🔗 [Click to Stream]({stream_link})", disable_web_page_preview=True)
+    except Exception as e:
+        await status.edit(f"❌ Error: {str(e)}")
+
+@app.on_message(filters.command("dl"))
+async def download_handler(client, message: Message):
+    asyncio.create_task(smart_vanish(message, 1))
+    uid = message.from_user.id
+    today = datetime.date.today()
+    
+    if not await is_admin(client, message.chat.id, uid):
+        if uid not in user_dl_stats or user_dl_stats[uid]["last_reset"] != today:
+            user_dl_stats[uid] = {"count": 0, "last_reset": today}
+        if user_dl_stats[uid]["count"] >= 3:
+            m = await message.reply("❌ **Daily Limit Reached!** (3/3). Try again tomorrow.")
+            return asyncio.create_task(smart_vanish(m, 5))
+        user_dl_stats[uid]["count"] += 1
+
+    url = message.text.split(None, 1)[1] if len(message.command) > 1 else None
+    if not url and message.reply_to_message:
+        url = message.reply_to_message.text or message.reply_to_message.caption
+
+    if not url:
+        return await message.reply("❌ Provide a link or reply to one.")
+
+    status = await message.reply("⏳ **Downloading...**")
+    try:
+        ydl_opts = {'outtmpl': f'{DOWNLOAD_PATH}/%(title)s.%(ext)s', 'quiet': True, 'format': 'best'}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
+        
+        await client.send_document(message.chat.id, file_path, caption=f"✅ **Downloaded:** {info.get('title')}")
+        if os.path.exists(file_path): os.remove(file_path)
+        await status.delete()
+    except Exception as e:
+        await status.edit(f"❌ **Download Failed:** {str(e)}")
+
+# ================= MODERATION: BAN & UNBAN =================
+
+@app.on_message(filters.command(["ban", "unban"]))
+async def moderation_handler(client, message):
+    asyncio.create_task(smart_vanish(message, 1))
+    if not await is_admin(client, message.chat.id, message.from_user.id): return
+    
+    user_id = None
+    if message.reply_to_message:
+        user_id = message.reply_to_message.from_user.id
+    elif len(message.command) > 1:
+        user_id = message.command[1]
+    
+    if not user_id: return await message.reply("❌ Reply to a user or provide their ID.")
+
+    cmd = message.command[0].lower()
+    try:
+        if cmd == "ban":
+            await client.ban_chat_member(message.chat.id, user_id)
+            await message.reply(f"🚫 **User Banned:** `{user_id}`")
+        else:
+            await client.unban_chat_member(message.chat.id, user_id)
+            await message.reply(f"✅ **User Unbanned:** `{user_id}`")
+    except Exception as e:
+        await message.reply(f"❌ Action Failed: {str(e)}")
+
 # ================= SYSTEM START =================
 
 @app.on_message(filters.command("start"))
@@ -219,8 +306,6 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
 
-# [WORKING COMMANDS: /dl, /stream, /ban, /unban LOGIC GOES HERE - UNCHANGED]
-
 async def main():
     await start_web_server()
     await app.start()
@@ -229,4 +314,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(main())
-                
+    
