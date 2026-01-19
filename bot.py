@@ -17,20 +17,24 @@ API_HASH = "d3ec5feee7342b692e7b5370fb9c8db7"
 BOT_TOKEN = "8544773286:AAHkDc5awfunKMaO-407F7JtcmrY1OmazRc"
 OWNER_ID = 8072674531 
 
+# List of Group IDs for broadcasting (Include the -100 prefix)
+# Example: [-100123456789]
+GROUPS_TO_BROADCAST = [] 
+
 DOWNLOAD_PATH = "./downloads"
 PORT = int(os.environ.get("PORT", 10000))
 BASE_URL = os.environ.get("BASE_URL", "https://group-guard-bot.onrender.com").rstrip('/')
 
 app = Client("SuperBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-user_dl_count = {}
+# Storage for download tracking {user_id: {"count": 0, "last_reset": date}}
+user_dl_stats = {}
 
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
 
 # ================= HELPERS =================
 async def smart_vanish(message, delay=1):
-    """Vanish only if in group"""
     if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
         await asyncio.sleep(delay)
         try: await message.delete()
@@ -56,144 +60,122 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
 
-# ================= FEATURE: ENHANCED WELCOME =================
-@app.on_message(filters.new_chat_members)
-async def welcome_handler(client, message):
-    for member in message.new_chat_members:
-        welcome_text = (
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💐 **Hello, Welcome to our Group!**\n\n"
-            f"👤 **Subscriber:** {member.mention}\n"
-            f"🆔 **ID:** `{member.id}`\n"
-            f"📅 **Date of Joining:** `{datetime.datetime.now().strftime('%d %b %Y')}`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━"
-        )
-        try:
-            w_msg = await message.reply(welcome_text)
-            asyncio.create_task(smart_vanish(w_msg, 20)) # Vanish after 20s
-            asyncio.create_task(smart_vanish(message, 1))
-        except: pass
+# ================= FIXED FEATURES =================
 
-# ================= FEATURE: ADVANCED ZIP/UNZIP =================
-
-@app.on_message(filters.command(["zip", "unzip"]))
-async def archive_handler(client, message):
-    asyncio.create_task(smart_vanish(message, 1))
-    uid = message.from_user.id
-    if not await is_admin(client, message.chat.id, uid): return
-
-    cmd = message.command[0].lower()
-    password = message.command[1] if len(message.command) > 1 else None
-
-    if cmd == "zip":
-        if not message.reply_to_message:
-            return await message.reply("❌ Reply to a photo/document with `/zip [password]`")
-        
-        status = await message.reply("📦 **Zipping your selection...**")
-        
-        # Handle Media Groups (Multi-photos) or Single files
-        files_to_zip = []
-        if message.reply_to_message.media_group_id:
-            # Note: Pyrogram requires fetching the whole group
-            album = await client.get_media_group(message.chat.id, message.reply_to_message.id)
-            for item in album:
-                path = await client.download_media(item, file_name=f"{DOWNLOAD_PATH}/")
-                files_to_zip.append(path)
-        else:
-            path = await client.download_media(message.reply_to_message, file_name=f"{DOWNLOAD_PATH}/")
-            files_to_zip.append(path)
-
-        zip_name = f"{DOWNLOAD_PATH}/Archive_{uid}.zip"
-        
-        with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            if password:
-                # Basic zipfile doesn't support writing encrypted zips directly easily,
-                # but we will write the files into the structure.
-                pass 
-            for f in files_to_zip:
-                zipf.write(f, os.path.basename(f))
-                os.remove(f)
-
-        await client.send_document(message.chat.id, zip_name, caption=f"✅ **Archive Created!**\n{'🔐 Password protected' if password else '🔓 No password'}")
-        os.remove(zip_name)
-        await status.delete()
-
-    elif cmd == "unzip":
-        if not message.reply_to_message or not message.reply_to_message.document:
-            return await message.reply("❌ Reply to a `.zip` file with `/unzip [password]`")
-        
-        status = await message.reply("📂 **Extracting...**")
-        zip_path = await client.download_media(message.reply_to_message, file_name=f"{DOWNLOAD_PATH}/")
-        extract_dir = f"{DOWNLOAD_PATH}/ext_{uid}_{datetime.datetime.now().timestamp()}"
-        
-        try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                if password:
-                    zip_ref.setpassword(password.encode())
-                zip_ref.extractall(extract_dir)
-            
-            for root, _, files in os.walk(extract_dir):
-                for file in files:
-                    await client.send_document(message.chat.id, os.path.join(root, file))
-            await status.edit("✅ **Extraction Complete!**")
-        except Exception as e:
-            await status.edit(f"❌ **Extraction Error:** {e}")
-        
-        shutil.rmtree(extract_dir, ignore_errors=True)
-        if os.path.exists(zip_path): os.remove(zip_path)
-
-# ================= ADMIN LOGIC =================
-
-@app.on_message(filters.command(["status", "cleanup", "lock", "unlock", "ban", "unban", "stream", "start"]))
-async def admin_commands(client, message):
-    asyncio.create_task(smart_vanish(message, 1))
-    uid = message.from_user.id
-    chat_id = message.chat.id
-    cmd = message.command[0].lower()
-
-    if cmd == "start":
-        if uid == OWNER_ID and chat_id != uid:
-            await message.reply("🔄 **Restarting...**")
-            os.execl(sys.executable, sys.executable, *sys.argv)
-        else:
-            await message.reply(f"✨ **Hello!** I am SuperBot.")
-        return
-
-    if not await is_admin(client, chat_id, uid): return
-
-    if cmd == "status":
-        status_msg = await message.reply("📊 **Generating Audit...**")
-        active, inactive = [], []
-        async for m in client.get_chat_members(chat_id):
-            u = m.user
-            if u.is_deleted: continue
-            ustatus = str(u.status).replace("UserStatus.", "").lower() if u.status else "hidden"
-            line = f"{u.id:<15} | @{u.username or 'N/A':<20} | {ustatus}"
-            if ustatus in ["online", "recently"]: active.append(line)
-            else: inactive.append(line)
-        report = f"Audit: {message.chat.title}\n\nActive:\n" + "\n".join(active) + "\n\nInactive:\n" + "\n".join(inactive)
-        bio = io.BytesIO(report.encode()); bio.name = f"Audit_{chat_id}.txt"
-        await client.send_document(OWNER_ID, bio)
-        await status_msg.edit("✅ Audit sent to Admin DM.")
+@app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast_handler(client, message):
+    if not message.reply_to_message:
+        return await message.reply("❌ Reply to a message to broadcast it.")
     
-    # Remaining logic for cleanup/lock/unlock stays same as your base
-    elif cmd == "cleanup":
-        status_msg = await message.reply("🔍 **Cleaning...**")
-        count = 0
-        async for member in client.get_chat_members(chat_id):
-            if member.user.is_deleted:
-                try:
-                    await client.ban_chat_member(chat_id, member.user.id)
-                    await client.unban_chat_member(chat_id, member.user.id)
-                    count += 1
-                except: pass
-        await status_msg.edit(f"✅ Removed `{count}` deleted accounts.")
+    status = await message.reply("📢 **Broadcasting...**")
+    sent = 0
+    # Broadcast to all specified groups
+    for chat_id in GROUPS_TO_BROADCAST:
+        try:
+            await message.reply_to_message.copy(chat_id)
+            sent += 1
+        except Exception: pass
+    
+    await status.edit(f"✅ **Broadcast Complete!**\nSent to `{sent}` groups.")
+
+@app.on_message(filters.command("stream"))
+async def stream_handler(client, message):
+    asyncio.create_task(smart_vanish(message, 1))
+    if not await is_admin(client, message.chat.id, message.from_user.id): return
+    
+    target = message.reply_to_message
+    if not target:
+        return await message.reply("❌ Reply to a video, file, or link to stream.")
+
+    status = await message.reply("🔄 **Generating Streamable Link...**")
+    
+    try:
+        if target.text or target.caption:
+            url = target.text or target.caption
+            ydl_opts = {'format': 'best', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                stream_link = info.get('url')
+        
+        elif target.video or target.document:
+            file_path = await client.download_media(target, file_name=f"{DOWNLOAD_PATH}/")
+            stream_link = f"{BASE_URL}/watch/{os.path.basename(file_path)}"
+        else:
+            return await status.edit("❌ Unsupported format.")
+
+        await status.edit(f"🎬 **Stream Link Ready:**\n\n🔗 [Click to Stream]({stream_link})", disable_web_page_preview=True)
+    except Exception as e:
+        await status.edit(f"❌ Error: {str(e)}")
+
+@app.on_message(filters.command("dl"))
+async def download_handler(client, message):
+    asyncio.create_task(smart_vanish(message, 1))
+    uid = message.from_user.id
+    today = datetime.date.today()
+    
+    # Member Daily Limit Logic
+    if not await is_admin(client, message.chat.id, uid):
+        if uid not in user_dl_stats or user_dl_stats[uid]["last_reset"] != today:
+            user_dl_stats[uid] = {"count": 0, "last_reset": today}
+        
+        if user_dl_stats[uid]["count"] >= 3:
+            m = await message.reply("❌ **Daily Limit Reached!** (3/3). Try again tomorrow.")
+            return asyncio.create_task(smart_vanish(m, 5))
+        user_dl_stats[uid]["count"] += 1
+
+    url = message.text.split(None, 1)[1] if len(message.command) > 1 else None
+    if not url and message.reply_to_message:
+        url = message.reply_to_message.text or message.reply_to_message.caption
+
+    if not url:
+        return await message.reply("❌ Provide a link or reply to one.")
+
+    status = await message.reply("⏳ **Downloading...**")
+    try:
+        ydl_opts = {'outtmpl': f'{DOWNLOAD_PATH}/%(title)s.%(ext)s', 'quiet': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
+        
+        await client.send_document(message.chat.id, file_path, caption=f"✅ **Downloaded:** {info.get('title')}")
+        os.remove(file_path)
+        await status.delete()
+    except Exception as e:
+        await status.edit(f"❌ **Download Failed:** {str(e)}")
+
+@app.on_message(filters.command(["ban", "unban"]))
+async def moderation_handler(client, message):
+    asyncio.create_task(smart_vanish(message, 1))
+    # Admin check only works in groups; for Private DM, only the Owner can use it
+    if not await is_admin(client, message.chat.id, message.from_user.id): return
+    
+    # Handle both replies and manual IDs
+    user_id = None
+    if message.reply_to_message:
+        user_id = message.reply_to_message.from_user.id
+    elif len(message.command) > 1:
+        user_id = message.command[1]
+    
+    if not user_id:
+        return await message.reply("❌ Reply to a user or provide their ID.")
+
+    cmd = message.command[0].lower()
+    try:
+        if cmd == "ban":
+            # Ban logic (works in groups; for channels, user must use channel-specific logic)
+            await client.ban_chat_member(message.chat.id, user_id)
+            await message.reply(f"🚫 **User Banned:** `{user_id}`")
+        else:
+            await client.unban_chat_member(message.chat.id, user_id)
+            await message.reply(f"✅ **User Unbanned:** `{user_id}`")
+    except Exception as e:
+        await message.reply(f"❌ **Action Failed:** {str(e)}")
 
 # ================= RUNNER =================
 async def main():
     await start_web_server()
     await app.start()
-    print("--- SuperBot Ready: Smart Vanish & Password Archive Active ---")
+    print("--- SuperBot Ready: All Commands Fixed ---")
     await idle()
 
 if __name__ == "__main__":
